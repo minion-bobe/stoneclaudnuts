@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stone Claud Nuts</title>
+  <meta name="description" content="A poker puzzle — find the two hole cards with the highest EV across three community boards">
+  <meta property="og:title" content="Stone Claud Nuts">
+  <meta property="og:description" content="A poker puzzle — find the optimal two cards across three community boards">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🃏</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Unicase:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <style>* { margin: 0; padding: 0; box-sizing: border-box; }</style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useCallback, useMemo } = React;
+
+    const SUITS=["♠","♥","♦","♣"];
+    const SC={"♠":"#4a4a5a","♥":"#d4727e","♦":"#d4727e","♣":"#4a4a5a"};
+    const RANKS=["2","3","4","5","6","7","8","9","T","J","Q","K","A"];
+    const RV={"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9,"T":10,"J":11,"Q":12,"K":13,"A":14};
+    const RD={"2":"2","3":"3","4":"4","5":"5","6":"6","7":"7","8":"8","9":"9","T":"10","J":"J","Q":"Q","K":"K","A":"A"};
+    const VN={2:"2",3:"3",4:"4",5:"5",6:"6",7:"7",8:"8",9:"9",10:"T",11:"J",12:"Q",13:"K",14:"A"};
+    const HN=["High Card","Pair","Two Pair","Three of a Kind","Straight","Flush","Full House","Four of a Kind","Straight Flush"];
+
+    function makeDeck(){let d=[];for(let s of SUITS)for(let r of RANKS)d.push({rank:r,suit:s});return d}
+    function shuf(a){a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+    function ck(c){return c.rank+c.suit}
+    function cd(c){return RD[c.rank]+c.suit}
+    function comb(a,k){if(!k)return[[]];if(a.length<k)return[];let r=[];for(let i=0;i<=a.length-k;i++)for(let x of comb(a.slice(i+1),k-1))r.push([a[i],...x]);return r}
+
+    function ev5(cards){
+      let v=cards.map(c=>RV[c.rank]).sort((a,b)=>b-a),s=cards.map(c=>c.suit);
+      let fl=s.every(x=>x===s[0]),u=[...new Set(v)].sort((a,b)=>b-a),st=false,sh=0;
+      if(u.length>=5){if(u[0]-u[4]===4){st=true;sh=u[0]}if(!st&&u.includes(14)&&u.includes(2)&&u.includes(3)&&u.includes(4)&&u.includes(5)){st=true;sh=5}}
+      let ct={};for(let x of v)ct[x]=(ct[x]||0)+1;
+      let g=Object.entries(ct).map(([x,c])=>({v:+x,c})).sort((a,b)=>b.c-a.c||b.v-a.v);
+      if(st&&fl)return[8,sh];if(g[0].c===4)return[7,g[0].v,g[1].v];
+      if(g[0].c===3&&g[1].c===2)return[6,g[0].v,g[1].v];if(fl)return[5,...v];
+      if(st)return[4,sh];if(g[0].c===3)return[3,g[0].v,...g.slice(1).map(x=>x.v)];
+      if(g[0].c===2&&g[1].c===2){let p1=Math.max(g[0].v,g[1].v),p2=Math.min(g[0].v,g[1].v);return[2,p1,p2,g[2].v]}
+      if(g[0].c===2)return[1,g[0].v,...g.slice(1).map(x=>x.v)];return[0,...v];
+    }
+
+    function cmpH(a,b){for(let i=0;i<Math.max(a.length,b.length);i++){if((a[i]||0)>(b[i]||0))return 1;if((a[i]||0)<(b[i]||0))return-1}return 0}
+    function best7(seven){let b=null,bc=null;for(let c of comb(seven,5)){let e=ev5(c);if(!b||cmpH(e,b)>0){b=e;bc=c}}return{eval:b,cards:bc}}
+
+    function hDesc(e){
+      switch(e[0]){
+        case 8:return "Straight Flush, "+VN[e[1]]+" high";
+        case 7:return "Quads, "+VN[e[1]]+"s";
+        case 6:return VN[e[1]]+"s full of "+VN[e[2]]+"s";
+        case 5:return "Flush, "+VN[e[1]]+" high";
+        case 4:return "Straight, "+VN[e[1]]+" high";
+        case 3:return "Trips, "+VN[e[1]]+"s";
+        case 2:return VN[e[1]]+"s and "+VN[e[2]]+"s";
+        case 1:return "Pair of "+VN[e[1]]+"s";
+        default:return VN[e[1]]+" High";
+      }
+    }
+
+    function Flower({x,y,size,color,opacity,rot}){
+      const s=size/20;
+      return(
+        <g transform={"translate("+x+","+y+") rotate("+(rot||0)+") scale("+s+")"} opacity={opacity||0.5}>
+          {[0,60,120,180,240,300].map(a=>
+            <ellipse key={a} cx="0" cy="-7" rx="3.5" ry="7" fill={color||"#e8c4c8"} transform={"rotate("+a+")"}/>
+          )}
+          <circle cx="0" cy="0" r="3" fill="#f2d9dc"/>
+        </g>
+      );
+    }
+
+    function FloralCorner({flip}){
+      const t=flip?"scale(-1,1) translate(-200,0)":"";
+      return(
+        <svg width="200" height="160" style={{position:"absolute",top:0,[flip?"right":"left"]:0,pointerEvents:"none"}} viewBox="0 0 200 160">
+          <g transform={t}>
+            <path d="M30,140 Q15,95 15,50" stroke="#b8c9a3" strokeWidth="1.2" fill="none" opacity="0.2"/>
+            <path d="M55,150 Q47,95 51,40" stroke="#b8c9a3" strokeWidth="1.2" fill="none" opacity="0.15"/>
+            <path d="M15,130 Q-5,100 5,70" stroke="#b8c9a3" strokeWidth="1.2" fill="none" opacity="0.2"/>
+            <path d="M0,0 Q4,-8 0,-14 Q-4,-8 0,0" fill="#c4d4af" transform="translate(25,80) rotate(-30)" opacity="0.2"/>
+            <path d="M0,0 Q4,-8 0,-14 Q-4,-8 0,0" fill="#c4d4af" transform="translate(50,70) rotate(15) scale(0.8)" opacity="0.15"/>
+            <path d="M0,0 Q4,-8 0,-14 Q-4,-8 0,0" fill="#c4d4af" transform="translate(12,95) rotate(-50) scale(0.7)" opacity="0.18"/>
+            <Flower x={28} y={50} size={16} color="#e0b4b8" opacity={0.35} rot={10}/>
+            <Flower x={52} y={38} size={12} color="#dbbfc3" opacity={0.25} rot={-15}/>
+            <Flower x={14} y={72} size={10} color="#e8c8cb" opacity={0.3} rot={25}/>
+            <Flower x={70} y={55} size={8} color="#d4a8ad" opacity={0.15} rot={5}/>
+          </g>
+        </svg>
+      );
+    }
+
+    function FloralDivider(){
+      return(
+        <svg width="200" height="20" viewBox="0 0 200 20" style={{display:"block",margin:"0 auto"}}>
+          <line x1="20" y1="10" x2="80" y2="10" stroke="#e0d0d3" strokeWidth="0.5"/>
+          <line x1="120" y1="10" x2="180" y2="10" stroke="#e0d0d3" strokeWidth="0.5"/>
+          <Flower x={100} y={10} size={9} color="#dbbfc3" opacity={0.5}/>
+          <path d="M0,0 Q4,-8 0,-14 Q-4,-8 0,0" fill="#c4d4af" transform="translate(85,12) rotate(-70) scale(0.6)" opacity="0.3"/>
+          <path d="M0,0 Q4,-8 0,-14 Q-4,-8 0,0" fill="#c4d4af" transform="translate(115,12) rotate(70) scale(0.6)" opacity="0.3"/>
+        </svg>
+      );
+    }
+
+    function Card({card,selected,onClick,small,hi}){
+      const w=small?46:60,h=small?64:84,fs=small?13:17;
+      return(
+        <div onClick={onClick} style={{
+          width:w,height:h,borderRadius:8,
+          border:hi?"1.5px solid #a8c9a0":selected?"2px solid #c9a0b0":"1px solid #e8dde0",
+          background:hi?"#f6faf5":selected?"#fdf5f7":"#fff",
+          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+          cursor:onClick?"pointer":"default",fontSize:fs,fontWeight:600,color:SC[card.suit],
+          transition:"all 0.2s",userSelect:"none",flexShrink:0,
+          transform:selected?"translateY(-3px)":"none",
+          boxShadow:selected?"0 4px 14px rgba(180,140,155,0.15)":"0 1px 4px rgba(180,140,155,0.08)"
+        }}>
+          <div>{RD[card.rank]}</div>
+          <div style={{fontSize:fs+3,lineHeight:1}}>{card.suit}</div>
+        </div>
+      );
+    }
+
+    function BoardDetail({bi,board,pH,bH,pR,bR,stats}){
+      const c=cmpH(pR.eval,bR.eval);
+      const o=c>0?"You win":c===0?"Tie":"Optimal wins";
+      const col=c>0?"#8cb88a":c===0?"#d4b87a":"#d4838e";
+      const pK=new Set(pR.cards.map(ck));
+      const bK=new Set(bR.cards.map(ck));
+      const sides=[
+        {label:"Yours",hole:pH,res:pR,keys:pK,w:stats.pWin,l:stats.pLoss,t:stats.pTie},
+        {label:"Optimal",hole:bH,res:bR,keys:bK,w:stats.bWin,l:stats.bLoss,t:stats.bTie}
+      ];
+      return(
+        <div style={{background:"#fff",borderRadius:12,padding:20,border:"1px solid #f0e8ea"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <span style={{fontSize:14,fontWeight:600,color:"#b8a0aa"}}>Board {bi+1}</span>
+            <span style={{fontSize:14,fontWeight:600,color:col}}>{o}</span>
+          </div>
+          <div style={{display:"flex",gap:4,justifyContent:"center",marginBottom:16}}>
+            {board.map(c=><Card key={ck(c)} card={c} small/>)}
+          </div>
+          <div style={{display:"flex",gap:20}}>
+            {sides.map(x=>(
+              <div key={x.label} style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:600,color:"#c0aab2",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>{x.label}</div>
+                <div style={{display:"flex",gap:4,marginBottom:8}}>{x.hole.map(c=><Card key={ck(c)} card={c} small hi={x.keys.has(ck(c))}/>)}</div>
+                <div style={{fontSize:14,fontWeight:600,color:"#5a4a52"}}>{hDesc(x.res.eval)}</div>
+                <div style={{fontSize:11,color:"#c8b8be",marginTop:3}}>Best 5: {x.res.cards.map(c=>cd(c)).join("  ")}</div>
+                <div style={{fontSize:12,color:"#a09098",marginTop:8,lineHeight:1.7}}>
+                  <span style={{color:"#8cb88a"}}>Win {x.w.toFixed(1)}%</span>{" · "}
+                  <span style={{color:"#d4838e"}}>Lose {x.l.toFixed(1)}%</span>{" · "}
+                  <span style={{color:"#d4b87a"}}>Tie {x.t.toFixed(1)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function App(){
+      const [boards,setBoards]=useState(null);
+      const [rem,setRem]=useState([]);
+      const [sel,setSel]=useState([]);
+      const [res,setRes]=useState(null);
+      const [detail,setDetail]=useState(false);
+
+      const deal=useCallback(()=>{
+        const d=shuf(makeDeck());
+        setBoards([d.slice(0,5),d.slice(5,10),d.slice(10,15)]);
+        setRem(d.slice(15));setSel([]);setRes(null);setDetail(false);
+      },[]);
+
+      const toggle=(c)=>{
+        if(res)return;const k=ck(c);
+        if(sel.find(x=>ck(x)===k))setSel(sel.filter(x=>ck(x)!==k));
+        else if(sel.length<2)setSel([...sel,c]);
+      };
+
+      const solve=useCallback(()=>{
+        if(!boards||sel.length!==2)return;
+        const pRes=boards.map(b=>best7([...sel,...b]));
+        const allCombos=comb(rem,2);
+        const entries=allCombos.map(h=>({hole:h,results:boards.map(b=>best7([...h,...b]))}));
+
+        let pIdx=entries.findIndex(e=>
+          (ck(e.hole[0])===ck(sel[0])&&ck(e.hole[1])===ck(sel[1]))||
+          (ck(e.hole[0])===ck(sel[1])&&ck(e.hole[1])===ck(sel[0]))
+        );
+        if(pIdx>=0){entries[pIdx].results=pRes;entries[pIdx].hole=sel;}
+        else{pIdx=entries.length;entries.push({hole:sel,results:pRes});}
+
+        const shares=entries.map((e,ei)=>{
+          let tot=0,m=0;
+          for(let oi=0;oi<entries.length;oi++){
+            if(oi===ei)continue;
+            if(e.hole.some(c=>entries[oi].hole.some(o=>ck(c)===ck(o))))continue;
+            m++;let sh=0;
+            for(let bi=0;bi<3;bi++){
+              const c=cmpH(e.results[bi].eval,entries[oi].results[bi].eval);
+              if(c>0)sh+=1/3;else if(c===0)sh+=1/6;
+            }
+            tot+=sh;
+          }
+          return{tot,m};
+        });
+
+        let bestI=0;
+        for(let i=1;i<shares.length;i++){
+          if(shares[i].tot/(shares[i].m||1)>shares[bestI].tot/(shares[bestI].m||1))bestI=i;
+        }
+
+        let pW=0,pT=0;
+        for(let i=0;i<3;i++){
+          const c=cmpH(pRes[i].eval,entries[bestI].results[i].eval);
+          if(c>0)pW++;else if(c===0)pT++;
+        }
+
+        const pEV=(shares[pIdx].m?shares[pIdx].tot/shares[pIdx].m:0)*100;
+        const bEV=(shares[bestI].m?shares[bestI].tot/shares[bestI].m:0)*100;
+
+        const boardStats=[0,1,2].map(bi=>{
+          let pWins=0,pLoss=0,pTie=0,bWins=0,bLoss=0,bTie=0,pM=0,bM=0;
+          for(let oi=0;oi<entries.length;oi++){
+            if(oi===pIdx)continue;
+            if(sel.some(c=>entries[oi].hole.some(o=>ck(c)===ck(o))))continue;
+            pM++;
+            const c=cmpH(pRes[bi].eval,entries[oi].results[bi].eval);
+            if(c>0)pWins++;else if(c===0)pTie++;else pLoss++;
+          }
+          for(let oi=0;oi<entries.length;oi++){
+            if(oi===bestI)continue;
+            if(entries[bestI].hole.some(c=>entries[oi].hole.some(o=>ck(c)===ck(o))))continue;
+            bM++;
+            const c=cmpH(entries[bestI].results[bi].eval,entries[oi].results[bi].eval);
+            if(c>0)bWins++;else if(c===0)bTie++;else bLoss++;
+          }
+          return{
+            pWin:pM?(pWins/pM*100):0,pLoss:pM?(pLoss/pM*100):0,pTie:pM?(pTie/pM*100):0,
+            bWin:bM?(bWins/bM*100):0,bLoss:bM?(bLoss/bM*100):0,bTie:bM?(bTie/bM*100):0
+          };
+        });
+
+        const ranked=entries.map((e,i)=>({i,avg:shares[i].m?shares[i].tot/shares[i].m:0})).sort((a,b)=>b.avg-a.avg);
+        const pRank=ranked.findIndex(r=>r.i===pIdx)+1;
+
+        setRes({pRes,bestHole:entries[bestI].hole,bestRes:entries[bestI].results,pW,pT,opt:bestI===pIdx,pEV,bEV,pRank,total:entries.length,boardStats});
+      },[boards,sel,rem]);
+
+      const grouped=useMemo(()=>{
+        if(!rem.length)return[];
+        const g={};for(const s of SUITS)g[s]=[];
+        for(const c of rem)g[c.suit].push(c);
+        for(const s of SUITS)g[s].sort((a,b)=>RV[b.rank]-RV[a.rank]);
+        return SUITS.map(s=>({suit:s,cards:g[s]}));
+      },[rem]);
+
+      return(
+        <div style={{minHeight:"100vh",background:"linear-gradient(180deg, #fef9f8 0%, #f9f4f2 50%, #f5f0ee 100%)",color:"#4a3a42",fontFamily:"'Spectral','Georgia',serif",padding:"36px 16px",position:"relative",overflow:"hidden"}}>
+          <FloralCorner/>
+          <FloralCorner flip/>
+          <div style={{maxWidth:900,margin:"0 auto",position:"relative"}}>
+            <div style={{textAlign:"center",marginBottom:10}}>
+              <h1 style={{fontSize:32,fontWeight:600,letterSpacing:"0.04em",color:"#6a4a55",marginBottom:4,fontFamily:"'Cormorant Unicase', serif"}}>
+                Stone Claud Nuts
+              </h1>
+              <p style={{color:"#c0a8b0",fontSize:14,fontWeight:400,letterSpacing:"0.03em"}}>
+                find the two hole cards with the highest ev across three boards
+              </p>
+            </div>
+            <FloralDivider/>
+            <div style={{height:20}}/>
+
+            {!boards?(
+              <div style={{maxWidth:500,margin:"44px auto 0",textAlign:"center"}}>
+                <div style={{background:"#fff",borderRadius:14,padding:"32px 36px",border:"1px solid #efe6e8",boxShadow:"0 4px 20px rgba(180,140,155,0.06)",textAlign:"left",marginBottom:28}}>
+                  <p style={{fontSize:16,color:"#6a5a62",lineHeight:1.7,margin:"0 0 16px",fontStyle:"italic",textAlign:"center"}}>
+                    Three community boards are dealt face up. Your job is to find the two hole cards that win the most money across all three.
+                  </p>
+                  <div style={{width:40,height:1,background:"#e8d8dc",margin:"0 auto 16px"}}/>
+                  <p style={{fontSize:14,color:"#8a7a82",lineHeight:1.8,margin:"0 0 12px"}}>
+                    <span style={{color:"#6a5a62",fontWeight:600}}>How it works</span> — each board plays like a separate Hold'em hand. Your two hole cards combine with each board's five cards to make the best possible five-card poker hand.
+                  </p>
+                  <p style={{fontSize:14,color:"#8a7a82",lineHeight:1.8,margin:"0 0 12px"}}>
+                    <span style={{color:"#6a5a62",fontWeight:600}}>Scoring</span> — each board is worth 1/3 of the pot. Win a board, take that third. Tie a board, split it. The best hand is the one with the highest average pot share against all possible opposing two-card holdings.
+                  </p>
+                  <p style={{fontSize:14,color:"#8a7a82",lineHeight:1.8,margin:0}}>
+                    <span style={{color:"#6a5a62",fontWeight:600}}>The challenge</span> — a hand that crushes one board might be weak on the others. The optimal pick balances strength across all three textures. After you lock in, we exhaustively check every possible combo and show you where you ranked.
+                  </p>
+                </div>
+                <button onClick={deal} style={{
+                  padding:"14px 48px",fontSize:15,fontWeight:400,borderRadius:50,border:"1px solid #d4b8c0",
+                  background:"#fff",color:"#8a6a75",cursor:"pointer",letterSpacing:"0.08em",
+                  fontFamily:"inherit",transition:"all 0.3s",boxShadow:"0 2px 12px rgba(180,140,155,0.1)"
+                }}>deal</button>
+              </div>
+            ):(
+              <>
+                <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:28}}>
+                  {boards.map((b,i)=>(
+                    <div key={i} style={{background:"#fff",borderRadius:12,padding:"12px 16px",border:"1px solid #efe6e8",boxShadow:"0 2px 10px rgba(180,140,155,0.06)"}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#c0aab2",marginBottom:8,textAlign:"center",textTransform:"uppercase",letterSpacing:"0.1em"}}>
+                        Board {i+1}
+                        {res&&<span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>{" · "}{HN[res.pRes[i].eval[0]]}</span>}
+                      </div>
+                      <div style={{display:"flex",gap:5}}>{b.map(c=><Card key={ck(c)} card={c} small/>)}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{textAlign:"center",marginBottom:20}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"#c0aab2",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.1em"}}>
+                    hole cards · {sel.length} of 2
+                  </div>
+                  <div style={{display:"flex",gap:8,justifyContent:"center",minHeight:88}}>
+                    {sel.map(c=><Card key={ck(c)} card={c} selected onClick={()=>toggle(c)}/>)}
+                    {sel.length<2&&Array(2-sel.length).fill(0).map((_,i)=>(
+                      <div key={i} style={{width:60,height:84,borderRadius:8,border:"1.5px dashed #ddd0d4",display:"flex",alignItems:"center",justifyContent:"center",color:"#d4c0c8",fontSize:20,fontStyle:"italic"}}>?</div>
+                    ))}
+                  </div>
+                </div>
+
+                {!res?(
+                  <div style={{textAlign:"center",marginBottom:24}}>
+                    <button onClick={solve} disabled={sel.length!==2} style={{
+                      padding:"12px 40px",fontSize:14,fontWeight:400,borderRadius:50,
+                      border:sel.length===2?"1px solid #c9a0b0":"1px solid #e8dde0",
+                      background:sel.length===2?"#fff":"#faf6f7",color:sel.length===2?"#8a6a75":"#d0c0c5",
+                      cursor:sel.length===2?"pointer":"default",fontFamily:"inherit",letterSpacing:"0.06em",
+                      transition:"all 0.3s"
+                    }}>lock in</button>
+                  </div>
+                ):(
+                  <div style={{textAlign:"center",marginBottom:28}}>
+                    <div style={{background:"#fff",borderRadius:14,padding:"26px 34px",display:"inline-block",border:"1px solid #efe6e8",marginBottom:18,boxShadow:"0 4px 20px rgba(180,140,155,0.08)"}}>
+                      <div style={{fontSize:42,fontWeight:400,color:"#5a3a45",letterSpacing:"-0.02em",fontStyle:"italic"}}>
+                        #{res.pRank} <span style={{fontSize:17,fontWeight:400,color:"#c0a8b0"}}>of {res.total}</span>
+                      </div>
+                      <div style={{width:40,height:1,background:"#e8d8dc",margin:"12px auto"}}/>
+                      <div style={{fontSize:14,color:res.opt?"#8cb88a":"#a08a90",fontWeight:400,fontStyle:"italic"}}>
+                        {res.opt?"optimal":res.pEV.toFixed(1)+"% ev  ·  optimal "+res.bEV.toFixed(1)+"%  ·  gap "+(res.bEV-res.pEV).toFixed(1)+"%"}
+                      </div>
+                      {!res.opt&&(
+                        <div style={{fontSize:12,color:"#d0c0c5",marginTop:6}}>
+                          head-to-head: {res.pW}w / {res.pT}t / {3-res.pW-res.pT}l
+                        </div>
+                      )}
+                    </div>
+                    <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+                      <button onClick={()=>setDetail(!detail)} style={{
+                        padding:"10px 26px",fontSize:13,fontWeight:400,borderRadius:50,border:"1px solid #ddd0d4",
+                        background:"#fff",color:"#8a7a80",cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.04em"
+                      }}>{detail?"hide":"show"} breakdown</button>
+                      <button onClick={deal} style={{
+                        padding:"10px 26px",fontSize:13,fontWeight:400,borderRadius:50,border:"1px solid #c9a0b0",
+                        background:"#fff",color:"#8a6a75",cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.04em"
+                      }}>new deal</button>
+                    </div>
+
+                    {detail&&(
+                      <div style={{marginTop:24,display:"flex",flexDirection:"column",gap:14,textAlign:"left"}}>
+                        <div style={{display:"flex",justifyContent:"center",gap:24,alignItems:"center"}}>
+                          <div style={{textAlign:"center"}}>
+                            <div style={{fontSize:11,fontWeight:600,color:"#c0aab2",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>yours</div>
+                            <div style={{display:"flex",gap:5}}>{sel.map(c=><Card key={ck(c)} card={c} small selected/>)}</div>
+                          </div>
+                          <span style={{color:"#ddd0d4",fontSize:15,fontStyle:"italic"}}>vs</span>
+                          <div style={{textAlign:"center"}}>
+                            <div style={{fontSize:11,fontWeight:600,color:"#c0aab2",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>optimal</div>
+                            <div style={{display:"flex",gap:5}}>{res.bestHole.map(c=><Card key={ck(c)} card={c} small hi/>)}</div>
+                          </div>
+                        </div>
+                        <FloralDivider/>
+                        {boards.map((b,i)=>(
+                          <BoardDetail key={i} bi={i} board={b} pH={sel} bH={res.bestHole} pR={res.pRes[i]} bR={res.bestRes[i]} stats={res.boardStats[i]}/>
+                        ))}
+
+                        <div style={{background:"#fff",borderRadius:12,padding:"20px 24px",border:"1px solid #f0e8ea",fontSize:13,color:"#8a7a82",lineHeight:1.9}}>
+                          <div style={{fontSize:11,fontWeight:600,color:"#c0aab2",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>how the ev adds up</div>
+                          <div style={{display:"flex",gap:16}}>
+                            {[
+                              {label:"Yours",vals:res.boardStats.map(s=>s.pWin),ev:res.pEV},
+                              {label:"Optimal",vals:res.boardStats.map(s=>s.bWin),ev:res.bEV}
+                            ].map(x=>(
+                              <div key={x.label} style={{flex:1}}>
+                                <div style={{fontWeight:600,color:"#6a5a62",marginBottom:6}}>{x.label}</div>
+                                <div style={{fontFamily:"'Courier New',monospace",fontSize:13,color:"#8a7a82"}}>
+                                  Board 1: {x.vals[0].toFixed(1)}%<br/>
+                                  Board 2: {x.vals[1].toFixed(1)}%<br/>
+                                  Board 3: {x.vals[2].toFixed(1)}%<br/>
+                                  <div style={{width:"100%",height:1,background:"#e8d8dc",margin:"6px 0"}}/>
+                                  <span style={{color:"#6a5a62",fontWeight:600}}>Avg: ({x.vals.map(v=>v.toFixed(1)).join(" + ")}) / 3 = {x.ev.toFixed(1)}%</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {!res.opt&&(
+                            <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f0e8ea",color:"#d4838e",fontStyle:"italic",fontSize:13}}>
+                              Gap per board: {res.boardStats.map((s,i)=>{
+                                const diff=s.bWin-s.pWin;
+                                return "Board "+(i+1)+": "+(diff>0?"+":"")+diff.toFixed(1)+"%";
+                              }).join("  ·  ")}
+                              <span style={{color:"#a08a90"}}>{" → "}avg gap {(res.bEV-res.pEV).toFixed(1)}%</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!res&&(
+                  <div style={{background:"#fff",borderRadius:12,padding:16,border:"1px solid #efe6e8",boxShadow:"0 2px 10px rgba(180,140,155,0.06)"}}>
+                    {grouped.map(g=>(
+                      <div key={g.suit} style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:5,justifyContent:"center"}}>
+                        {g.cards.map(c=>(
+                          <Card key={ck(c)} card={c} small selected={!!sel.find(s=>ck(s)===ck(c))} onClick={()=>toggle(c)}/>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
