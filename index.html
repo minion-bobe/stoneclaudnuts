@@ -382,11 +382,11 @@
                         ))}
 
                         <div style={{background:"#fff",borderRadius:12,padding:"20px 24px",border:"1px solid #f0e8ea",fontSize:13,color:"#8a7a82",lineHeight:1.9}}>
-                          <div style={{fontSize:11,fontWeight:600,color:"#c0aab2",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>how the ev adds up</div>
+                          <div style={{fontSize:11,fontWeight:600,color:"#c0aab2",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>how the ev adds up (win% + ½ tie%)</div>
                           <div style={{display:"flex",gap:16}}>
                             {[
-                              {label:"Yours",vals:res.boardStats.map(s=>s.pWin),ev:res.pEV},
-                              {label:"Optimal",vals:res.boardStats.map(s=>s.bWin),ev:res.bEV}
+                              {label:"Yours",vals:res.boardStats.map(s=>s.pWin+s.pTie*0.5),ev:res.pEV},
+                              {label:"Optimal",vals:res.boardStats.map(s=>s.bWin+s.bTie*0.5),ev:res.bEV}
                             ].map(x=>(
                               <div key={x.label} style={{flex:1}}>
                                 <div style={{fontWeight:600,color:"#6a5a62",marginBottom:6}}>{x.label}</div>
